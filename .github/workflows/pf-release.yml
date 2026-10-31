@@ -3,7 +3,6 @@ name: pf-release
 on:
   push:
     tags: ['v*-pf.*']
-    branches: ['feature/**']
   pull_request:
     branches: [privacyfence]
     paths:
