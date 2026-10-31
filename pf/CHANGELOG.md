@@ -4,7 +4,7 @@ Changes to the fork itself (its build, release and checks). Upstream changes are
 
 ## [Unreleased]
 
-## [1.7.22-pf.1] - 2026-10-31
+## [1.7.22-pf.2] - 2026-10-31
 
 ### Added
 
