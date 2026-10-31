@@ -36,7 +36,7 @@ Only the maintainer releases, and only from `privacyfence`.
    gh attestation verify oci://ghcr.io/privacyfence/grist-core:X.Y.Z-pf.N --repo privacyfence/grist-core
    ```
 
-To rehearse a release without publishing, run `pf-release.yml` from the Actions tab (`workflow_dispatch`; it also runs by itself on pull requests that touch it). A dry run builds both architectures and runs the lock-out check on amd64.
+To rehearse a release without publishing, run `pf-release.yml` from the Actions tab (`workflow_dispatch`; it also runs by itself on pull requests that touch it). `workflow_dispatch` is always a dry run. A dry run builds both architectures and runs the lock-out check on amd64. Tag releases queue separately from dry runs (concurrency group `pf-release-publish`), so a dry run can never replace a pending release.
 
 ## Upstream sync
 
@@ -58,7 +58,7 @@ GitHub disables scheduled workflows in a repository with no activity for 60 days
 
 `bash pf/e2e/run_lockout.sh <image>` runs in `pf-ci.yml` (every push to `feature/**`, `fix/**`, `chore/**` and `sync/**`, and every PR to `privacyfence`) and in `pf-release.yml`. `image-and-lockout` is the required check of the `privacyfence` ruleset, so a failure can neither merge nor, because releases come from `privacyfence`, be released.
 
-**Image report.** It fails, naming the item, unless the image has `GRIST_EXT_FULL_EDITION_BASE_URL=` (empty) and `GRIST_ALLOW_AUTOMATIC_VERSION_CHECKING=false` in its environment (`ok: image env`), and has no `/grist/ext/app`, `/grist/ext/assets` or `/grist/_build/ext`, and a build channel of `core` in `/grist/_build/app/common/version.js` (`ok: image contents`). A failure means full-edition code, or a switch to it, could be in the image: the build arguments or the dummy `ext/` changed, or upstream's `Dockerfile` or version file changed. Never remove the check; if only the compiled form of the channel changed, adjust the pattern in `run_lockout.sh` to whatever still shows the literal `core`.
+**Image report.** It fails, naming the item, unless the image has `GRIST_EXT_FULL_EDITION_BASE_URL=` (empty) and `GRIST_ALLOW_AUTOMATIC_VERSION_CHECKING=false` in its environment (`ok: image env`), and has no `/grist/ext/app`, `/grist/ext/assets` or `/grist/_build/ext`, and a build channel of `core` in `/grist/_build/app/common/version.js` (`ok: image contents`); when the contents test fails, the last `image contents:` line printed above the failure names the item. A failure means full-edition code, or a switch to it, could be in the image: the build arguments or the dummy `ext/` changed, or upstream's `Dockerfile` or version file changed. Never remove the check; if only the compiled form of the channel changed, adjust the pattern in `run_lockout.sh` to whatever still shows the literal `core`.
 
 It then starts the mock OIDC server and the image with the boot key in the environment only, and `pf/e2e/lockout_check.py` prints `ok: <name>` for each of six checks, stopping at the first `FAIL: <name>: <message>`:
 

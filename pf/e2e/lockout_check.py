@@ -105,7 +105,8 @@ def check_team_membership(ctx):
     _expect_status(status, 200, "PATCH", path)
     status, body = request(ctx, "GET", path, headers=_boot(ctx))
     _expect_status(status, 200, "GET", path)
-    users = _json(body, "access response").get("users")
+    access = _json(body, "access response")
+    users = access.get("users") if isinstance(access, dict) else None
     if not isinstance(users, list):
         raise CheckFailed("access response has no users list")
     roles = {u.get("email"): u.get("access") for u in users if isinstance(u, dict)}
@@ -128,7 +129,10 @@ def check_oidc_sign_in(ctx):
         raise CheckFailed("no session cookie: check for a Domain=localhost cookie")
     status, body = request(ctx, "GET", "/api/profile/user")
     _expect_status(status, 200, "GET", "/api/profile/user")
-    email = _json(body, "profile").get("email")
+    profile = _json(body, "profile")
+    if not isinstance(profile, dict):
+        raise CheckFailed("profile response is not an object")
+    email = profile.get("email")
     if email != ctx.email:
         raise CheckFailed(f"signed in as {email!r}, expected {ctx.email!r}")
 
@@ -144,6 +148,8 @@ def check_api_key(ctx):
 
 
 def check_api_key_use(ctx):
+    # A fresh opener without cookies: only the Bearer header may authenticate these requests.
+    ctx.opener = urllib.request.build_opener()
     auth = {"Authorization": f"Bearer {ctx.api_key}"}
     path = f"/api/orgs/{ctx.site}/workspaces"
     status, body = request(ctx, "POST", path, headers=auth, json_body={"name": "lockout"})
@@ -178,9 +184,12 @@ def main(argv=None):
     parser.add_argument("--site", required=True, help="team site subdomain")
     parser.add_argument("--email", required=True, help="email the mock identity provider signs in")
     args = parser.parse_args(argv)
-    boot_key = os.environ.get("PF_BOOT_KEY", "")
-    if not boot_key:
-        print("FAIL: setup: PF_BOOT_KEY is not set")
+    try:
+        boot_key = os.environ.get("PF_BOOT_KEY", "")
+        if not boot_key:
+            raise CheckFailed("PF_BOOT_KEY is not set")
+    except CheckFailed as err:
+        print(f"FAIL: setup: {err}")
         return 1
     ctx = Context(
         opener=urllib.request.build_opener(),
