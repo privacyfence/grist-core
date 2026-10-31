@@ -11,12 +11,12 @@ permissions:
   contents: read
 
 env:
-  GVISOR_DIGEST: sha256:0
-  NODE_DIGEST: sha256:0
-  NODE_SLIM_DIGEST: sha256:0
-  PYTHON_DIGEST: sha256:0
+  GVISOR_DIGEST: sha256:1fbe14eb52fae4a07b67ee97eaaf84eefce5bd1acf375f612e09177d5fb13b79
+  NODE_DIGEST: sha256:ead00acb9f552752e0fe17a428d692094ab5f9e021e7bb97202fa7b0cd702a04
+  NODE_SLIM_DIGEST: sha256:2117f713a417f3aff682ac8f5bc2ebbdf1beed51f36e67ab1e0fd3866b6d2d8f
+  PYTHON_DIGEST: sha256:673719e071ecf27434fd2635bbd8d00f49f4fdd81f243143438a42ced8bedf60
   MOCK_OIDC_TAG: '6.1.4'
-  MOCK_OIDC_IMAGE: ghcr.io/navikt/mock-oauth2-server@sha256:0
+  MOCK_OIDC_IMAGE: ghcr.io/navikt/mock-oauth2-server@sha256:647dd8c78a54f0e6fcd58d79c884e612f8f998a0662276f3e1db22e464a50192
 
 jobs:
   digests:
