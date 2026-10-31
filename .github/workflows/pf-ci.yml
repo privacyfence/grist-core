@@ -1,0 +1,86 @@
+name: pf-ci
+
+on:
+  push:
+    branches: ['feature/**', 'fix/**', 'chore/**', 'sync/**']
+  pull_request:
+    branches: [privacyfence]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GVISOR_DIGEST: sha256:0
+  NODE_DIGEST: sha256:0
+  NODE_SLIM_DIGEST: sha256:0
+  PYTHON_DIGEST: sha256:0
+  MOCK_OIDC_TAG: '6.1.4'
+  MOCK_OIDC_IMAGE: ghcr.io/navikt/mock-oauth2-server@sha256:0
+
+jobs:
+  digests:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Print the digests of the external images and compare them with the pins
+        run: |
+          status=0
+          check() {
+            name="$1"
+            pinned="$2"
+            actual="$(docker buildx imagetools inspect "$name" --format '{{.Manifest.Digest}}')"
+            echo "$name -> $actual"
+            if [ "$actual" != "$pinned" ]; then
+              echo "::error::$name is pinned to $pinned but is now $actual"
+              status=1
+            fi
+          }
+          check docker.io/gristlabs/gvisor-unprivileged:buster "$GVISOR_DIGEST"
+          check node:22-trixie "$NODE_DIGEST"
+          check node:22-trixie-slim "$NODE_SLIM_DIGEST"
+          check python:3.11-slim-trixie "$PYTHON_DIGEST"
+          check "ghcr.io/navikt/mock-oauth2-server:$MOCK_OIDC_TAG" "${MOCK_OIDC_IMAGE#*@}"
+          exit "$status"
+
+  image-and-lockout:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Free some space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /usr/share/swift
+
+      - name: Add a dummy ext/ directory
+        run: mkdir ext && touch ext/dummy
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Build the open-source image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: pf-grist:ci
+          build-args: |
+            GRIST_BUILD_CHANNEL=core
+            GRIST_BUILD_COMMIT=${{ github.sha }}
+            GRIST_ALLOW_AUTOMATIC_VERSION_CHECKING=false
+            GRIST_EXT_FULL_EDITION_BASE_URL=
+          build-contexts: |
+            ext=ext
+            docker.io/gristlabs/gvisor-unprivileged:buster=docker-image://docker.io/gristlabs/gvisor-unprivileged@${{ env.GVISOR_DIGEST }}
+            node:22-trixie=docker-image://node@${{ env.NODE_DIGEST }}
+            node:22-trixie-slim=docker-image://node@${{ env.NODE_SLIM_DIGEST }}
+            python:3.11-slim-trixie=docker-image://python@${{ env.PYTHON_DIGEST }}
+          cache-from: type=gha,scope=pf-ci
+          cache-to: type=gha,scope=pf-ci,mode=max
+
+      - name: Run the lock-out check
+        run: bash pf/e2e/run_lockout.sh pf-grist:ci
