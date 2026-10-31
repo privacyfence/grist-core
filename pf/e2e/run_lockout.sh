@@ -40,9 +40,14 @@ printf '%s\n' "$env_list" | grep -qx 'GRIST_EXT_FULL_EDITION_BASE_URL=' \
 printf '%s\n' "$env_list" | grep -qx 'GRIST_ALLOW_AUTOMATIC_VERSION_CHECKING=false' \
   || fail "image env lacks GRIST_ALLOW_AUTOMATIC_VERSION_CHECKING=false"
 echo "ok: image env"
-docker run --rm --entrypoint sh "$IMAGE" -c \
-  'test ! -e /grist/ext/app && test ! -e /grist/ext/assets && test ! -e /grist/_build/ext && grep -q "channel = \"core\"" /grist/_build/app/common/version.js' \
-  || fail "image contents: extensions present or build channel is not core"
+# Each test echoes its label first, so a failure names the failing item (the output is in the CI log).
+docker run --rm --entrypoint sh "$IMAGE" -c '
+  echo "image contents: /grist/ext/app must not exist" &&    test ! -e /grist/ext/app &&
+  echo "image contents: /grist/ext/assets must not exist" && test ! -e /grist/ext/assets &&
+  echo "image contents: /grist/_build/ext must not exist" && test ! -e /grist/_build/ext &&
+  echo "image contents: build channel must be core" &&  grep -q "channel = \"core\"" /grist/_build/app/common/version.js
+' \
+  || fail "image contents: the last 'image contents:' line above names the failing item"
 echo "ok: image contents"
 
 # 2. The mock identity provider.

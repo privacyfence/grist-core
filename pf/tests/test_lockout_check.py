@@ -143,6 +143,19 @@ def test_sign_in_without_cookie_fails():
         lc.check_oidc_sign_in(sign_in_ctx(jar=session_jar(with_cookie=False)))
 
 
+def test_sign_in_profile_not_object_fails():
+    ctx = sign_in_ctx()
+    ctx.opener.routes[("GET", "/api/profile/user")] = ok(["x"])
+    with pytest.raises(lc.CheckFailed, match="profile response is not an object"):
+        lc.check_oidc_sign_in(ctx)
+
+
+def test_team_membership_access_not_object_fails():
+    ctx = make_ctx({("PATCH", "/api/orgs/team/access"): ok({}), ("GET", "/api/orgs/team/access"): ok([1])})
+    with pytest.raises(lc.CheckFailed, match="no users list"):
+        lc.check_team_membership(ctx)
+
+
 def test_api_key_plain_text_ok():
     ctx = make_ctx({("POST", "/api/profile/apikey"): Resp(200, API_KEY + "\n")})
     lc.check_api_key(ctx)
@@ -167,15 +180,40 @@ def use_routes(workspace=None):
     }
 
 
-def test_api_key_use_ok():
-    ctx = make_ctx(use_routes(), api_key=API_KEY)
+def use_ctx(monkeypatch, routes):
+    """A context whose session opener has a cookie; check_api_key_use must build its own cookie-less opener."""
+    fresh = FakeOpener(routes)
+    built = []
+
+    def build_opener(*handlers):
+        built.append(handlers)
+        return fresh
+
+    monkeypatch.setattr(lc.urllib.request, "build_opener", build_opener)
+    ctx = make_ctx({}, api_key=API_KEY, scratch={"jar": session_jar()})
+    return ctx, fresh, built
+
+
+def test_api_key_use_ok(monkeypatch):
+    ctx, fresh, _ = use_ctx(monkeypatch, use_routes())
     lc.check_api_key_use(ctx)
-    assert all(r.get_header("Authorization") == f"Bearer {API_KEY}" for r in ctx.opener.requests)
-    assert len(ctx.opener.requests) == 3
+    assert all(r.get_header("Authorization") == f"Bearer {API_KEY}" for r in fresh.requests)
+    assert len(fresh.requests) == 3
 
 
-def test_api_key_use_workspace_refused_fails():
-    ctx = make_ctx(use_routes(workspace=Resp(403, "no")), api_key=API_KEY)
+def test_api_key_use_sends_no_cookie(monkeypatch):
+    ctx, fresh, built = use_ctx(monkeypatch, use_routes())
+    session_opener = ctx.opener
+    lc.check_api_key_use(ctx)
+    assert built == [()]  # a plain opener: no cookie processor
+    assert ctx.opener is fresh and ctx.opener is not session_opener
+    assert session_opener.requests == []
+    assert len(fresh.requests) == 3
+    assert all(r.get_header("Cookie") is None for r in fresh.requests)
+
+
+def test_api_key_use_workspace_refused_fails(monkeypatch):
+    ctx, _, _ = use_ctx(monkeypatch, use_routes(workspace=Resp(403, "no")))
     with pytest.raises(lc.CheckFailed, match="403"):
         lc.check_api_key_use(ctx)
 
@@ -189,7 +227,7 @@ def test_json_body_sends_content_type():
 def test_missing_boot_key_env_fails(monkeypatch, capsys):
     monkeypatch.delenv("PF_BOOT_KEY", raising=False)
     assert lc.main(["--grist", "http://grist", "--site", "team", "--email", EMAIL]) == 1
-    assert "PF_BOOT_KEY is not set" in capsys.readouterr().out
+    assert capsys.readouterr().out == "FAIL: setup: PF_BOOT_KEY is not set\n"
 
 
 def patch_checks(monkeypatch, names_to_fail=()):
@@ -242,3 +280,30 @@ def test_secrets_never_printed(monkeypatch, capsys):
     with pytest.raises(lc.CheckFailed) as err:
         lc.check_api_key(ctx)
     assert API_KEY not in str(err.value)
+
+
+def test_secrets_never_printed_when_api_key_use_fails(monkeypatch, capsys):
+    monkeypatch.setenv("PF_BOOT_KEY", BOOT_KEY)
+    jar = session_jar()
+    session = FakeOpener(
+        {
+            ("GET", "/api/orgs/team/access"): ok(
+                {"users": [{"email": e, "access": "editors"} for e in ("newcomer@example.com", EMAIL)]}
+            ),
+            ("PATCH", "/api/orgs/team/access"): ok({}),
+            ("GET", "/api/orgs/team"): ok(free_org()),
+            ("GET", "/login"): Resp(403, "no"),
+            ("GET", "/api/profile/user"): ok({"email": EMAIL}),
+            ("POST", "/api/profile/apikey"): Resp(200, API_KEY),
+        }
+    )
+    failing = FakeOpener({("POST", "/api/orgs/team/workspaces"): Resp(403, f"{API_KEY} {BOOT_KEY}")})
+    openers = iter([session, failing])
+    monkeypatch.setattr(lc.urllib.request, "build_opener", lambda *a: next(openers))
+    monkeypatch.setattr(lc, "build_session_opener", lambda: (session, jar))
+    assert lc.main(ARGV) == 1
+    out = capsys.readouterr()
+    text = out.out + out.err
+    assert "ok: api_key" in text and "FAIL: api_key_use" in text
+    assert BOOT_KEY not in text
+    assert API_KEY not in text
