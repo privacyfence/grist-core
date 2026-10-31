@@ -36,7 +36,7 @@ Only the maintainer releases, and only from `privacyfence`.
    gh attestation verify oci://ghcr.io/privacyfence/grist-core:X.Y.Z-pf.N --repo privacyfence/grist-core
    ```
 
-To rehearse a release without publishing, run `pf-release.yml` from the Actions tab (`workflow_dispatch`; it also runs by itself on pull requests that touch it). `workflow_dispatch` is always a dry run. A dry run builds both architectures and runs the lock-out check on amd64. Tag releases queue separately from dry runs (concurrency group `pf-release-publish`), so a dry run can never replace a pending release.
+To rehearse a release without publishing, run `pf-release.yml` from the Actions tab (`workflow_dispatch`; it also runs by itself on pull requests that touch it). `workflow_dispatch` is always a dry run. A dry run builds both architectures and runs the lock-out check on amd64. Tag releases queue separately from dry runs (concurrency group `pf-release-publish`), so a dry run can never replace a pending release. Only one run can wait in that group, so a third release tag pushed while one release runs and another waits cancels the waiting release without publishing it. Push one release tag at a time and wait for its run to finish before pushing the next.
 
 ## Upstream sync
 
