@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>grist-core fork setup steps</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,600&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Layout: one reading column, a numbered checklist per item, before/after as two clear parts. */
+  --bg: #f6f7f5;
+  --surface: #ffffff;
+  --ink: #1d2320;
+  --muted: #5b6660;
+  --line: #d9dfdb;
+  --accent: #1f6f5c;
+  --accent-soft: #e3f0ec;
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141917; --surface: #1c2320; --ink: #e6ebe8; --muted: #9aa7a0;
+    --line: #2e3833; --accent: #6cc5ad; --accent-soft: #1f302a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141917; --surface: #1c2320; --ink: #e6ebe8; --muted: #9aa7a0;
+  --line: #2e3833; --accent: #6cc5ad; --accent-soft: #1f302a; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 var(--font-body); }
+main { max-width: 46rem; margin: 0 auto; padding: 2.5rem 1rem 4rem; display: grid; gap: 2rem; }
+h1, h2 { font-family: var(--font-display); text-wrap: balance; margin: 0; }
+h1 { font-size: 2rem; line-height: 1.15; }
+h2 { font-size: 1.45rem; padding-bottom: .4rem; border-bottom: 2px solid var(--accent); }
+h3 { font-size: 1.08rem; margin: 0; }
+p { margin: 0; }
+.lede { color: var(--muted); max-width: 65ch; }
+.part { display: grid; gap: 1.25rem; }
+.item { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 1.1rem 1.2rem; display: grid; gap: .8rem; }
+.item header { display: flex; flex-wrap: wrap; gap: .4rem 1rem; align-items: baseline; justify-content: space-between; }
+.id { font-family: var(--font-mono); font-size: .8rem; color: var(--accent); }
+.time { font-size: .85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+ol { margin: 0; padding: 0; list-style: none; counter-reset: step; display: grid; gap: .55rem; }
+ol li { counter-increment: step; display: grid; grid-template-columns: 1.4rem 1.6rem 1fr; gap: .4rem; align-items: start; }
+ol li::before { content: counter(step) "."; color: var(--muted); font-variant-numeric: tabular-nums; padding-top: .05rem; }
+ol li input { margin: .3rem 0 0; width: 1rem; height: 1rem; accent-color: var(--accent); }
+ol li label { cursor: pointer; }
+li.done label { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--line); }
+code { font-family: var(--font-mono); font-size: .88em; background: var(--accent-soft); padding: .05rem .3rem; border-radius: 4px; overflow-wrap: anywhere; }
+pre { margin: .3rem 0 0; background: var(--accent-soft); padding: .6rem .75rem; border-radius: 6px; overflow-x: auto; font: .85rem/1.5 var(--font-mono); }
+a { color: var(--accent); }
+a:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.done-when { border-left: 3px solid var(--accent); padding: .35rem .75rem; background: var(--accent-soft); border-radius: 0 6px 6px 0; font-size: .95rem; }
+.see { font-size: .92rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <header style="display:grid;gap:.6rem">
+    <h1>grist-core fork setup steps</h1>
+    <p class="lede">One thing to do before <code>/implement</code> builds the fork's image pipeline, and one after it, before the pull request merges. Your ticks are saved in this browser.</p>
+  </header>
+
+  <section class="part" aria-labelledby="before">
+    <h2 id="before">Before implementation</h2>
+    <article class="item">
+      <header><h3>1. Base branch, upstream workflows and Actions permissions</h3><span class="time">about 10 min</span></header>
+      <span class="id">mb1-branch-and-actions</span>
+      <ol>
+        <li><input type="checkbox" id="mb1-1"><label for="mb1-1">Create the base branch from upstream's v1.7.22 release commit. In a terminal:
+<pre>git clone https://github.com/privacyfence/grist-core
+cd grist-core
+git push origin a10b7227365adfe2555be40ae87bb9741284c0ca:refs/heads/privacyfence</pre>
+You should see <code>* [new branch] a10b722... -&gt; privacyfence</code>.</label></li>
+        <li><input type="checkbox" id="mb1-2"><label for="mb1-2">Open <a href="https://github.com/privacyfence/grist-core/settings">the repository settings</a>. Under <b>Default branch</b>, choose the switch icon, pick <code>privacyfence</code>, choose <b>Update</b>, and confirm.</label></li>
+        <li><input type="checkbox" id="mb1-3"><label for="mb1-3">Open <a href="https://github.com/privacyfence/grist-core/actions">the Actions tab</a>. If GitHub asks, choose <b>I understand my workflows, go ahead and enable them</b>.</label></li>
+        <li><input type="checkbox" id="mb1-4"><label for="mb1-4">In the Actions tab, disable each upstream workflow: select it in the left list, open the <b>⋯</b> menu at the top right, and choose <b>Disable workflow</b>. The list: <code>Push Docker image</code> (docker.yml), <code>Push latest Docker image</code> (docker_latest.yml), the four <code>fly-*</code> workflows, the CLA workflow (cla.yml), self-hosted.yml and translation_keys.yml. Leave <code>main.yml</code> (upstream's tests) enabled.</label></li>
+        <li><input type="checkbox" id="mb1-5"><label for="mb1-5">Open <a href="https://github.com/privacyfence/grist-core/settings/actions">Settings → Actions → General</a>. Under <b>Workflow permissions</b>, tick <b>Allow GitHub Actions to create and approve pull requests</b> and choose <b>Save</b>. The weekly sync needs it to open pull requests.</label></li>
+      </ol>
+      <p class="done-when"><b>Done when</b> the repository page shows <code>privacyfence</code> as the default branch at commit <code>a10b722</code>, the nine upstream workflows show as disabled, and the pull-request permission is ticked.</p>
+    </article>
+  </section>
+
+  <section class="part" aria-labelledby="after">
+    <h2 id="after">After implementation</h2>
+    <article class="item">
+      <header><h3>2. First release</h3><span class="time">about 40 min, mostly waiting for builds</span></header>
+      <span class="id">ma1-first-release</span>
+      <ol>
+        <li><input type="checkbox" id="ma1-1"><label for="ma1-1">Merge the fork's pull request into <code>privacyfence</code>.</label></li>
+        <li><input type="checkbox" id="ma1-2"><label for="ma1-2">Open <a href="https://github.com/privacyfence/grist-core/actions/workflows/pf-release.yml">pf-release.yml</a>, choose <b>Run workflow</b> on <code>privacyfence</code> with <b>dry_run</b> ticked. Both architecture builds and the lock-out check should be green, and nothing should be published.</label></li>
+        <li><input type="checkbox" id="ma1-3"><label for="ma1-3">Open <a href="https://github.com/privacyfence/grist-core/actions/workflows/pf-sync.yml">pf-sync.yml</a> and choose <b>Run workflow</b>. With v1.7.22 still the newest upstream release, it should finish green without opening a pull request.</label></li>
+        <li><input type="checkbox" id="ma1-4"><label for="ma1-4">In a pull request, rename <code>## [Unreleased]</code> in <code>pf/CHANGELOG.md</code> to <code>## [1.7.22-pf.1] - YYYY-MM-DD</code>, add an empty <code>## [Unreleased]</code> above it, and merge.</label></li>
+        <li><input type="checkbox" id="ma1-5"><label for="ma1-5">Tag the merge commit and push the tag: <code>git fetch origin privacyfence &amp;&amp; git tag -a v1.7.22-pf.1 -m v1.7.22-pf.1 origin/privacyfence &amp;&amp; git push origin v1.7.22-pf.1</code>. The release workflow starts by itself; wait for it to finish green.</label></li>
+        <li><input type="checkbox" id="ma1-6"><label for="ma1-6">Open <a href="https://github.com/orgs/privacyfence/packages/container/grist-core/settings">the grist-core package settings</a>, choose <b>Change visibility → Public</b>. Do the same for <a href="https://github.com/orgs/privacyfence/packages/container/gvisor-unprivileged/settings">gvisor-unprivileged</a>.</label></li>
+        <li><input type="checkbox" id="ma1-7"><label for="ma1-7">From a machine not signed in to ghcr.io, run <code>docker pull ghcr.io/privacyfence/grist-core:1.7.22-pf.1</code>. Then run <code>gh attestation verify oci://ghcr.io/privacyfence/grist-core:1.7.22-pf.1 --owner privacyfence</code>; it should say <b>Verification succeeded</b>.</label></li>
+      </ol>
+      <p class="done-when"><b>Report</b> <code>ma1-first-release: pass</code>, or <code>fail at step N: &lt;what you saw&gt;</code>.</p>
+    </article>
+  </section>
+</main>
+<script>
+(function () {
+  var key = "pf-grist-fork-steps";
+  var state = {};
+  try { state = JSON.parse(localStorage.getItem(key) || "{}"); } catch (e) { state = {}; }
+  document.querySelectorAll("ol li input[type=checkbox]").forEach(function (box) {
+    var li = box.closest("li");
+    box.checked = !!state[box.id];
+    li.classList.toggle("done", box.checked);
+    box.addEventListener("change", function () {
+      state[box.id] = box.checked;
+      li.classList.toggle("done", box.checked);
+      try { localStorage.setItem(key, JSON.stringify(state)); } catch (e) { /* no storage: ticks last for this visit only */ }
+    });
+  });
+})();
+</script>
+</body>
+</html>
