@@ -1,0 +1,44 @@
+project:
+  name: grist-core (PrivacyFence fork)
+docs:
+  must_read:
+    - README.md
+    - pf/README.md
+  plan_dir: pf/docs
+  changelog:
+    file: pf/CHANGELOG.md
+    section: "## [Unreleased]"
+git:
+  main_branch: privacyfence
+  branch_pattern: "<type>/<kebab-case>"
+  branch_types: [feature, fix, chore, sync]
+  merge_style: merge-commit
+verify:
+  fast:
+    - python3 -m pip install -q -r pf/requirements-dev.txt
+    - python3 -m pytest pf/tests -q
+    - ruff check pf
+    - sh -c 'set -- .github/workflows/pf-*.yml; [ -e "$1" ] || exit 0; actionlint "$@"'
+  dod:
+    - python3 -m pip install -q -r pf/requirements-dev.txt
+    - python3 -m pytest pf/tests -q
+    - ruff check pf
+    - sh -c 'set -- .github/workflows/pf-*.yml; [ -e "$1" ] || exit 0; actionlint "$@"'
+  dod_manual:
+    - "A change under .github/workflows/pf-*.yml, Dockerfile or the build needs the pf-ci.yml run on the pushed branch to be green (OSS image build and the lock-out check)."
+    - "Never change upstream files except as a recorded patch in pf/PATCHES.md."
+ci:
+  dispatchable:
+    - workflow: pf-ci.yml
+      use_when: "Building the OSS image and running the lock-out check (the cloud session has no Docker)"
+      notes: "Runs by itself on push to feature/**, fix/**, chore/**, sync/** and on pull requests to privacyfence; read that run. workflow_dispatch works once it is on privacyfence."
+    - workflow: pf-release.yml
+      use_when: "A dry run of a release: multi-arch build and the lock-out check, nothing published"
+      notes: "workflow_dispatch is always a dry run. Works only once it is on privacyfence. Never push a release tag from a session. Its pull_request dry run runs by itself on PRs that touch it."
+stacks:
+  - python
+models:
+  planner: opus
+  orchestrator: sonnet
+  worker: sonnet
+  reviewer: opus
