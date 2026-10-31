@@ -4,6 +4,8 @@ Changes to the fork itself (its build, release and checks). Upstream changes are
 
 ## [Unreleased]
 
+## [1.7.22-pf.1] - 2026-10-31
+
 ### Added
 
 - **Open-source image.** `ghcr.io/privacyfence/grist-core`, built from grist-core with no full-edition extensions, the full-edition switch off and every base image pinned by digest, for amd64 and arm64, with build provenance.
