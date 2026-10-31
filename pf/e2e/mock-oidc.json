@@ -1,0 +1,21 @@
+{
+  "interactiveLogin": false,
+  "tokenCallbacks": [
+    {
+      "issuerId": "default",
+      "tokenExpiry": 300,
+      "requestMappings": [
+        {
+          "requestParam": "grant_type",
+          "match": "authorization_code",
+          "claims": {
+            "sub": "lockout-user",
+            "email": "lockout@example.com",
+            "email_verified": true,
+            "name": "Lock Out"
+          }
+        }
+      ]
+    }
+  ]
+}
