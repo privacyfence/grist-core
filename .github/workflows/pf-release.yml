@@ -1,0 +1,288 @@
+name: pf-release
+
+on:
+  push:
+    tags: ['v*-pf.*']
+  pull_request:
+    branches: [privacyfence]
+    paths:
+      - .github/workflows/pf-release.yml
+      - pf/e2e/**
+      - Dockerfile
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pf-release
+  cancel-in-progress: false
+
+env:
+  # Only a tag push publishes; everything else is a dry run.
+  PUBLISH: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
+  TAG: ${{ github.ref_name }}
+  IMAGE: ghcr.io/privacyfence/grist-core
+  GVISOR_DIGEST: sha256:1fbe14eb52fae4a07b67ee97eaaf84eefce5bd1acf375f612e09177d5fb13b79
+  NODE_DIGEST: sha256:ead00acb9f552752e0fe17a428d692094ab5f9e021e7bb97202fa7b0cd702a04
+  NODE_SLIM_DIGEST: sha256:2117f713a417f3aff682ac8f5bc2ebbdf1beed51f36e67ab1e0fd3866b6d2d8f
+  PYTHON_DIGEST: sha256:673719e071ecf27434fd2635bbd8d00f49f4fdd81f243143438a42ced8bedf60
+  MOCK_OIDC_IMAGE: ghcr.io/navikt/mock-oauth2-server@sha256:647dd8c78a54f0e6fcd58d79c884e612f8f998a0662276f3e1db22e464a50192
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      publish: ${{ steps.check.outputs.publish }}
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Check the tag
+        id: check
+        run: |
+          set -euo pipefail
+          if [ "$PUBLISH" != "true" ]; then
+            echo "dry run"
+            xyz="$(jq -r .version package.json)"
+            echo "version=${xyz}-pf.0" >> "$GITHUB_OUTPUT"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! [[ "$TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-pf\.([0-9]+)$ ]]; then
+            echo "::error::Tag $TAG does not look like vX.Y.Z-pf.N"
+            exit 1
+          fi
+          xyz="${BASH_REMATCH[1]}"
+          version="${TAG#v}"
+          pkg="$(jq -r .version package.json)"
+          if [ "$xyz" != "$pkg" ]; then
+            echo "::error::Tag version $xyz differs from package.json version $pkg"
+            exit 1
+          fi
+          git fetch origin privacyfence
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/privacyfence; then
+            echo "::error::$GITHUB_SHA is not on the privacyfence branch"
+            exit 1
+          fi
+          if ! grep -qF "## [$version]" pf/CHANGELOG.md; then
+            echo "::error::pf/CHANGELOG.md has no '## [$version]' section"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.arch }}
+    needs: check
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Free some space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /usr/share/swift
+
+      - name: Add a dummy ext/ directory
+        run: mkdir ext && touch ext/dummy
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Log in to GHCR
+        if: needs.check.outputs.publish == 'true'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        if: needs.check.outputs.publish == 'true'
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          build-args: |
+            GRIST_BUILD_CHANNEL=core
+            GRIST_BUILD_COMMIT=${{ github.sha }}
+            GRIST_ALLOW_AUTOMATIC_VERSION_CHECKING=false
+            GRIST_EXT_FULL_EDITION_BASE_URL=
+          build-contexts: |
+            ext=ext
+            docker.io/gristlabs/gvisor-unprivileged:buster=docker-image://docker.io/gristlabs/gvisor-unprivileged@${{ env.GVISOR_DIGEST }}
+            node:22-trixie=docker-image://node@${{ env.NODE_DIGEST }}
+            node:22-trixie-slim=docker-image://node@${{ env.NODE_SLIM_DIGEST }}
+            python:3.11-slim-trixie=docker-image://python@${{ env.PYTHON_DIGEST }}
+
+      - name: Build (dry run)
+        if: needs.check.outputs.publish != 'true'
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          # amd64 is loaded to run the lock-out check; arm64 is only built.
+          load: ${{ matrix.arch == 'amd64' }}
+          push: false
+          tags: pf-grist:ci
+          build-args: |
+            GRIST_BUILD_CHANNEL=core
+            GRIST_BUILD_COMMIT=${{ github.sha }}
+            GRIST_ALLOW_AUTOMATIC_VERSION_CHECKING=false
+            GRIST_EXT_FULL_EDITION_BASE_URL=
+          build-contexts: |
+            ext=ext
+            docker.io/gristlabs/gvisor-unprivileged:buster=docker-image://docker.io/gristlabs/gvisor-unprivileged@${{ env.GVISOR_DIGEST }}
+            node:22-trixie=docker-image://node@${{ env.NODE_DIGEST }}
+            node:22-trixie-slim=docker-image://node@${{ env.NODE_SLIM_DIGEST }}
+            python:3.11-slim-trixie=docker-image://python@${{ env.PYTHON_DIGEST }}
+
+      - name: Run the lock-out check (dry run, amd64)
+        if: needs.check.outputs.publish != 'true' && matrix.arch == 'amd64'
+        run: bash pf/e2e/run_lockout.sh pf-grist:ci
+
+      - name: Export digest
+        if: needs.check.outputs.publish == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+
+      - name: Upload digest
+        if: needs.check.outputs.publish == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: digests-${{ matrix.arch }}
+          path: /tmp/digests/*
+          retention-days: 1
+          if-no-files-found: error
+
+  verify:
+    name: Verify the amd64 image
+    if: needs.check.outputs.publish == 'true'
+    needs: [check, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Download the amd64 digest
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: digests-amd64
+          path: /tmp/digests
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull the exact image that will be published
+        run: |
+          set -euo pipefail
+          digest="$(ls /tmp/digests)"
+          docker pull "$IMAGE@sha256:$digest"
+          echo "PF_VERIFY_IMAGE=$IMAGE@sha256:$digest" >> "$GITHUB_ENV"
+
+      - name: Run the lock-out check on that digest
+        run: bash pf/e2e/run_lockout.sh "$PF_VERIFY_IMAGE"
+
+  publish:
+    name: Publish
+    if: needs.check.outputs.publish == 'true'
+    needs: [check, build, verify]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Download digests
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create the manifest list and push
+        id: manifest
+        working-directory: /tmp/digests
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            -t "$IMAGE:$VERSION" -t "$IMAGE:latest" \
+            $(printf "$IMAGE@sha256:%s " *)
+          digest="$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{.Manifest.Digest}}')"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-name: ghcr.io/privacyfence/grist-core
+          subject-digest: ${{ steps.manifest.outputs.digest }}
+          push-to-registry: true
+
+      - name: Back up the gvisor base image
+        run: |
+          docker buildx imagetools create \
+            -t ghcr.io/privacyfence/gvisor-unprivileged:buster \
+            "docker.io/gristlabs/gvisor-unprivileged@$GVISOR_DIGEST"
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          xyz="${VERSION%-pf.*}"
+          {
+            echo "Built from gristlabs/grist-core v$xyz."
+            echo
+            awk -v h="## [$VERSION]" 'index($0, h) == 1 { on = 1; next } on && /^## / { exit } on' pf/CHANGELOG.md
+          } > /tmp/notes.md
+          gh release create "$TAG" --verify-tag --title "$TAG" --notes-file /tmp/notes.md
