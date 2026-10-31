@@ -184,12 +184,9 @@ def main(argv=None):
     parser.add_argument("--site", required=True, help="team site subdomain")
     parser.add_argument("--email", required=True, help="email the mock identity provider signs in")
     args = parser.parse_args(argv)
-    try:
-        boot_key = os.environ.get("PF_BOOT_KEY", "")
-        if not boot_key:
-            raise CheckFailed("PF_BOOT_KEY is not set")
-    except CheckFailed as err:
-        print(f"FAIL: setup: {err}")
+    boot_key = os.environ.get("PF_BOOT_KEY", "")
+    if not boot_key:
+        print("FAIL: setup: PF_BOOT_KEY is not set")
         return 1
     ctx = Context(
         opener=urllib.request.build_opener(),
