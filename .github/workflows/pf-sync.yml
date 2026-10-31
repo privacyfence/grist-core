@@ -1,0 +1,115 @@
+name: pf-sync
+
+on:
+  schedule:
+    - cron: '23 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GH_TOKEN: ${{ secrets.PF_SYNC_TOKEN }}
+  GH_REPO: ${{ github.repository }}
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    steps:
+      # The checkout comes first because step 1 reads pf/UPSTREAM.
+      - name: Check out privacyfence
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: privacyfence
+          fetch-depth: 0
+          token: ${{ secrets.PF_SYNC_TOKEN }}
+
+      - name: Find the latest upstream release
+        id: find
+        run: |
+          latest=$(git ls-remote --tags https://github.com/gristlabs/grist-core | sed -n 's#.*refs/tags/\(v[0-9]*\.[0-9]*\.[0-9]*\)$#\1#p' | sort -V | tail -1)
+          if [ -z "$latest" ]; then
+            echo "::error::No upstream release tag found"
+            exit 1
+          fi
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          current=$(tr -d '[:space:]' < pf/UPSTREAM)
+          if [ "$latest" = "$current" ]; then
+            echo "Already based on $latest"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git ls-remote --exit-code --heads origin "sync/$latest" > /dev/null; then
+            echo "Branch sync/$latest already exists"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          open=$(gh issue list --state open --search "in:title \"Upstream $latest needs a manual merge\"" --json number --jq length)
+          if [ "$open" != "0" ]; then
+            echo "An open issue for $latest needs a manual merge already exists"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Merge the release
+        id: merge
+        if: steps.find.outputs.skip != 'true'
+        env:
+          LATEST: ${{ steps.find.outputs.latest }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch https://github.com/gristlabs/grist-core "refs/tags/$LATEST:refs/tags/$LATEST"
+          git checkout -b "sync/$LATEST"
+          if git merge --no-ff -m "Merge upstream $LATEST" "$LATEST"; then
+            echo "conflict=false" >> "$GITHUB_OUTPUT"
+          else
+            git diff --name-only --diff-filter=U > "$RUNNER_TEMP/conflicts.txt"
+            git merge --abort
+            echo "conflict=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open an issue on a conflict
+        if: steps.find.outputs.skip != 'true' && steps.merge.outputs.conflict == 'true'
+        env:
+          LATEST: ${{ steps.find.outputs.latest }}
+        run: |
+          {
+            echo "Merging upstream $LATEST into privacyfence conflicts in these files:"
+            echo
+            sed 's/^/- `/; s/$/`/' "$RUNNER_TEMP/conflicts.txt"
+            echo
+            echo "Merge it by hand on a branch named sync/$LATEST, record the patches in pf/PATCHES.md, and write $LATEST to pf/UPSTREAM."
+          } > "$RUNNER_TEMP/issue.md"
+          gh issue create --title "Upstream $LATEST needs a manual merge" --body-file "$RUNNER_TEMP/issue.md"
+
+      - name: Record the base and push
+        if: steps.find.outputs.skip != 'true' && steps.merge.outputs.conflict == 'false'
+        env:
+          LATEST: ${{ steps.find.outputs.latest }}
+        run: |
+          echo "$LATEST" > pf/UPSTREAM
+          git add pf/UPSTREAM
+          git commit -m "Base on upstream $LATEST"
+          git push origin "sync/$LATEST"
+
+      - name: Open the pull request
+        if: steps.find.outputs.skip != 'true' && steps.merge.outputs.conflict == 'false'
+        env:
+          LATEST: ${{ steps.find.outputs.latest }}
+        run: |
+          {
+            echo "Merges upstream release [$LATEST](https://github.com/gristlabs/grist-core/releases/tag/$LATEST) into privacyfence."
+            echo
+            echo "Upstream workflow files this merge added or changed:"
+            echo
+            echo '```'
+            git diff --name-status privacyfence...HEAD -- .github/workflows
+            echo '```'
+            echo
+            echo "Disable any new upstream workflow in the Actions tab before merging, unless it is pf-*.yml."
+            echo
+            echo "Check pf/PATCHES.md: does any recorded patch need updating or dropping?"
+          } > "$RUNNER_TEMP/pr.md"
+          gh pr create --base privacyfence --head "sync/$LATEST" --title "Merge upstream $LATEST" --body-file "$RUNNER_TEMP/pr.md"
