@@ -262,11 +262,14 @@ jobs:
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        # actions/attest generates the build provenance itself. The org's Actions allowlist
+        # does not allow actions/attest-build-provenance's sub-action, so do not use that wrapper.
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ghcr.io/privacyfence/grist-core
           subject-digest: ${{ steps.manifest.outputs.digest }}
           push-to-registry: true
+          create-storage-record: false
 
       - name: Back up the gvisor base image
         run: |
