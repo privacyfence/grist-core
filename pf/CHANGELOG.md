@@ -4,6 +4,8 @@ Changes to the fork itself (its build, release and checks). Upstream changes are
 
 ## [Unreleased]
 
+## [1.7.22-pf.3] - 2026-11-01
+
 ### Fixed
 
 - **Start on a fresh volume with personal orgs or site creation turned off.** With `GRIST_PERSONAL_ORGS=false` or `GRIST_ORG_CREATION_ANYONE=false`, Grist exited at its first start on an empty `/persist` with `Error: No example workspace available`. The internal support user now always gets its own (hidden) org, so startup succeeds. Volumes left by the failed start recover on the next start. A patch on upstream; see `pf/PATCHES.md`.
