@@ -534,7 +534,7 @@ export class UsersManager {
       // (PrivacyFence patch, see pf/PATCHES.md.)
       const isSupportUser = login.email === normalizeEmail(SUPPORT_EMAIL);
       if ((getPersonalOrgsEnabled() || isSupportUser) && !user.personalOrg &&
-          !NON_LOGIN_EMAILS.includes(login.email)) {
+        !NON_LOGIN_EMAILS.includes(login.email)) {
         // Add a personal organization for this user.
         // We don't add a personal org for anonymous/everyone/previewer "users" as it could
         // get a bit confusing.
