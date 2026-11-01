@@ -168,6 +168,35 @@ def check_api_key_use(ctx):
     _expect_status(status, 200, "GET", path)
 
 
+def check_no_personal_org(ctx):
+    """With GRIST_PERSONAL_ORGS=false, the signed-in user sees the team site and no personal org."""
+    status, body = request(ctx, "GET", "/api/orgs")
+    _expect_status(status, 200, "GET", "/api/orgs")
+    orgs = _json(body, "orgs response")
+    if not isinstance(orgs, list) or not all(isinstance(org, dict) for org in orgs):
+        raise CheckFailed("orgs response is not a list of objects")
+    personal = [org for org in orgs if org.get("owner")]
+    if personal:
+        raise CheckFailed(f"the user sees {len(personal)} personal org(s)")
+    domains = sorted(str(org.get("domain")) for org in orgs)
+    if domains != [ctx.site]:
+        raise CheckFailed(f"the user sees the sites {domains}, expected only {ctx.site!r}")
+
+
+def check_no_org_creation(ctx):
+    """With GRIST_ORG_CREATION_ANYONE=false, a signed-in user cannot create a site."""
+    path = "/api/orgs"
+    status, _ = request(
+        ctx,
+        "POST",
+        path,
+        headers={"X-Requested-With": "XMLHttpRequest"},
+        json_body={"name": "lockout-new", "domain": "lockout-new"},
+        raise_for_status=False,
+    )
+    _expect_status(status, 403, "POST", path)
+
+
 CHECKS = [
     check_boot_key_access,
     check_free_plan_limits,
@@ -177,12 +206,23 @@ CHECKS = [
     check_api_key_use,
 ]
 
+# Run after check_oidc_sign_in (they need its session), with --suite-settings only.
+SUITE_SETTINGS_CHECKS = [
+    check_no_personal_org,
+    check_no_org_creation,
+]
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--grist", required=True, help="base URL of Grist")
     parser.add_argument("--site", required=True, help="team site subdomain")
     parser.add_argument("--email", required=True, help="email the mock identity provider signs in")
+    parser.add_argument(
+        "--suite-settings",
+        action="store_true",
+        help="Grist runs with GRIST_PERSONAL_ORGS=false and GRIST_ORG_CREATION_ANYONE=false: also check those",
+    )
     args = parser.parse_args(argv)
     boot_key = os.environ.get("PF_BOOT_KEY", "")
     if not boot_key:
@@ -195,7 +235,12 @@ def main(argv=None):
         site=args.site,
         email=args.email,
     )
-    for check in CHECKS:
+    checks = list(CHECKS)
+    if args.suite_settings:
+        names = [check.__name__ for check in checks]
+        at = names.index("check_oidc_sign_in") + 1
+        checks[at:at] = SUITE_SETTINGS_CHECKS
+    for check in checks:
         name = check.__name__.removeprefix("check_")
         try:
             check(ctx)

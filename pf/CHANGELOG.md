@@ -4,6 +4,14 @@ Changes to the fork itself (its build, release and checks). Upstream changes are
 
 ## [Unreleased]
 
+### Fixed
+
+- **Start on a fresh volume with personal orgs or site creation turned off.** With `GRIST_PERSONAL_ORGS=false` or `GRIST_ORG_CREATION_ANYONE=false`, Grist exited at its first start on an empty `/persist` with `Error: No example workspace available`. The internal support user now always gets its own (hidden) org, so startup succeeds. Volumes left by the failed start recover on the next start. A patch on upstream; see `pf/PATCHES.md`.
+
+### Added
+
+- **Lock-out check, pass 2.** The lock-out check also runs Grist with `GRIST_PERSONAL_ORGS=false` and `GRIST_ORG_CREATION_ANYONE=false` on a fresh `/persist` volume, then again after a restart on the same volume. It checks that a signed-in user sees only the team site, has no personal org, and cannot create a site.
+
 ## [1.7.22-pf.2] - 2026-10-31
 
 ### Added

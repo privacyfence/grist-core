@@ -307,3 +307,65 @@ def test_secrets_never_printed_when_api_key_use_fails(monkeypatch, capsys):
     assert "ok: api_key" in text and "FAIL: api_key_use" in text
     assert BOOT_KEY not in text
     assert API_KEY not in text
+
+
+def orgs_ctx(orgs):
+    return make_ctx({("GET", "/api/orgs"): ok(orgs)})
+
+
+def test_no_personal_org_ok():
+    lc.check_no_personal_org(orgs_ctx([{"domain": "team", "owner": None}]))
+
+
+def test_no_personal_org_personal_org_fails():
+    ctx = orgs_ctx([{"domain": "team", "owner": None}, {"domain": None, "owner": {"id": 5}}])
+    with pytest.raises(lc.CheckFailed, match="personal org"):
+        lc.check_no_personal_org(ctx)
+
+
+def test_no_personal_org_other_site_fails():
+    ctx = orgs_ctx([{"domain": "team", "owner": None}, {"domain": "other", "owner": None}])
+    with pytest.raises(lc.CheckFailed, match="expected only 'team'"):
+        lc.check_no_personal_org(ctx)
+
+
+def test_no_personal_org_no_team_site_fails():
+    with pytest.raises(lc.CheckFailed, match="expected only 'team'"):
+        lc.check_no_personal_org(orgs_ctx([]))
+
+
+def test_no_personal_org_not_a_list_fails():
+    with pytest.raises(lc.CheckFailed, match="not a list"):
+        lc.check_no_personal_org(orgs_ctx({"error": "x"}))
+
+
+def test_no_org_creation_refused_ok():
+    ctx = make_ctx({("POST", "/api/orgs"): Resp(403, '{"error": "no"}')})
+    lc.check_no_org_creation(ctx)
+    assert ctx.opener.requests[0].get_header("X-requested-with") == "XMLHttpRequest"
+
+
+def test_no_org_creation_allowed_fails():
+    ctx = make_ctx({("POST", "/api/orgs"): ok(12)})
+    with pytest.raises(lc.CheckFailed, match="answered 200, expected 403"):
+        lc.check_no_org_creation(ctx)
+
+
+def test_main_suite_settings_runs_extra_checks_after_sign_in(monkeypatch, capsys):
+    calls = []
+
+    def make(name):
+        def check(ctx):
+            calls.append(name)
+
+        check.__name__ = "check_" + name
+        return check
+
+    monkeypatch.setattr(lc, "CHECKS", [make(n) for n in ("boot", "oidc_sign_in", "api_key")])
+    monkeypatch.setattr(lc, "SUITE_SETTINGS_CHECKS", [make(n) for n in ("no_personal_org", "no_org_creation")])
+    monkeypatch.setenv("PF_BOOT_KEY", BOOT_KEY)
+    assert lc.main(ARGV) == 0
+    assert calls == ["boot", "oidc_sign_in", "api_key"]
+    calls.clear()
+    assert lc.main([*ARGV, "--suite-settings"]) == 0
+    assert calls == ["boot", "oidc_sign_in", "no_personal_org", "no_org_creation", "api_key"]
