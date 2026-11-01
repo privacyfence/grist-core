@@ -714,11 +714,18 @@ export class FlexServer implements GristServer {
    * is restored.
    */
   public async addSetupGate() {
-    const bootKey = getBootKey().value;
+    const { value: bootKey, source: bootKeySource } = getBootKey();
     if (bootKey) {
-      console.log(boxen(`BOOT KEY: ${bootKey}\n\nUse this key at /boot to sign in.`, {
-        padding: 1,
-      }));
+      if (bootKeySource === "env") {
+        // The operator supplied the key themselves: never write its value to the logs.
+        console.log(boxen("Boot key: set by GRIST_BOOT_KEY\n\nUse this key at /boot to sign in.", {
+          padding: 1,
+        }));
+      } else {
+        console.log(boxen(`BOOT KEY: ${bootKey}\n\nUse this key at /boot to sign in.`, {
+          padding: 1,
+        }));
+      }
     }
 
     // Ensure BootKeyLoginMiddleware endpoints exist even if it isn't the active

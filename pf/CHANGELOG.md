@@ -4,6 +4,16 @@ Changes to the fork itself (its build, release and checks). Upstream changes are
 
 ## [Unreleased]
 
+## [1.7.22-pf.4] - 2026-11-01
+
+### Fixed
+
+- **The boot key is no longer written to the logs.** Grist printed `GRIST_BOOT_KEY` at every start, twice: in the `BOOT KEY: ...` banner and in the settings dump (`== grist.boot.key: ...`). A key from `GRIST_BOOT_KEY` now shows the banner `Boot key: set by GRIST_BOOT_KEY` without the value, and the settings dump shows `*****`. The key still works at `/boot` and in the `x-boot-key` header. A key that does not come from the environment is shown as before. A patch on upstream; see `pf/PATCHES.md`.
+
+### Added
+
+- **Lock-out check: no secret in the logs.** The lock-out check starts Grist with distinctive values for the boot key, the session secret and the OIDC client secret, and fails every pass (fresh start and restart) if any of them appears in the container's output.
+
 ## [1.7.22-pf.3] - 2026-11-01
 
 ### Fixed

@@ -340,6 +340,8 @@ export const getBootKey = memoize((): ValueWithSource<string | undefined> => {
   const setting = appSettings.section("boot").flag("key");
   const value = setting.readString({
     envVar: "GRIST_BOOT_KEY",
+    // Keep the key out of the settings dump that is logged at startup.
+    censor: true,
   });
   const { source } = setting.describe();
   return { value, source };
