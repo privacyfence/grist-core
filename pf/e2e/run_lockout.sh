@@ -58,8 +58,13 @@ docker run -d --name mock-oidc --network host \
   -e SERVER_PORT=8080 -e JSON_CONFIG="$(cat pf/e2e/mock-oidc.json)" "$MOCK_OIDC_IMAGE" >/dev/null
 
 # 3. Grist. start_grist [docker run options...] starts the image with the settings every pass shares.
+# Every secret gets a distinctive value, so check_logs can look for it in the container's output.
 PF_BOOT_KEY="$(openssl rand -hex 16)"
+PF_SESSION_SECRET="$(openssl rand -hex 16)"
+PF_OIDC_CLIENT_SECRET="$(openssl rand -hex 16)"
 echo "::add-mask::$PF_BOOT_KEY"
+echo "::add-mask::$PF_SESSION_SECRET"
+echo "::add-mask::$PF_OIDC_CLIENT_SECRET"
 export PF_BOOT_KEY
 start_grist() {
   GRIST_BOOT_KEY="$PF_BOOT_KEY" docker run -d --name grist --network host \
@@ -69,10 +74,10 @@ start_grist() {
     -e GRIST_IN_SERVICE=true \
     -e GRIST_FORCE_LOGIN=true \
     -e GRIST_BOOT_KEY \
-    -e GRIST_SESSION_SECRET="$(openssl rand -hex 16)" \
+    -e GRIST_SESSION_SECRET="$PF_SESSION_SECRET" \
     -e GRIST_OIDC_IDP_ISSUER=http://localhost:8080/default \
     -e GRIST_OIDC_IDP_CLIENT_ID=grist \
-    -e GRIST_OIDC_IDP_CLIENT_SECRET=secret \
+    -e GRIST_OIDC_IDP_CLIENT_SECRET="$PF_OIDC_CLIENT_SECRET" \
     -e GRIST_OIDC_IDP_SKIP_END_SESSION_ENDPOINT=true \
     "$@" \
     "$IMAGE" >/dev/null
@@ -95,6 +100,15 @@ check_logs() {
   if docker logs grist 2>&1 | grep -qi 'full edition'; then
     fail "$1: Grist's log mentions the full edition"
   fi
+  # No configured secret may appear in the container's output (the value is never echoed).
+  local logs name value
+  logs="$(docker logs grist 2>&1)"
+  for name in PF_BOOT_KEY PF_SESSION_SECRET PF_OIDC_CLIENT_SECRET; do
+    value="${!name}"
+    if printf '%s' "$logs" | grep -qF -- "$value"; then
+      fail "$1: the value of $name appears in Grist's log"
+    fi
+  done
   echo "ok: logs"
 }
 

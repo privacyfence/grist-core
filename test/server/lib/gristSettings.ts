@@ -1,5 +1,5 @@
 import { appSettings } from "app/server/lib/AppSettings";
-import { getEdition, getEditionSource } from "app/server/lib/gristSettings";
+import { getBootKey, getEdition, getEditionSource } from "app/server/lib/gristSettings";
 import * as testUtils from "test/server/testUtils";
 import { EnvironmentSnapshot } from "test/server/testUtils";
 
@@ -95,6 +95,22 @@ describe("gristSettings", function() {
       setDbEdition("community");
       assert.equal(getEdition(), "full");
       assert.equal(getEditionSource(), "env");
+    });
+  });
+
+  describe("getBootKey", function() {
+    it("keeps the value out of the settings description", function() {
+      process.env.GRIST_BOOT_KEY = "distinctive-boot-key-value";
+      getBootKey.cache.clear();
+      try {
+        assert.equal(getBootKey().value, "distinctive-boot-key-value");
+        assert.equal(getBootKey().source, "env");
+        const dump = JSON.stringify(appSettings.describeAll());
+        assert.notInclude(dump, "distinctive-boot-key-value");
+        assert.include(dump, "grist.boot.key");
+      } finally {
+        getBootKey.cache.clear();
+      }
     });
   });
 });
