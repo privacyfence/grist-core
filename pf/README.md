@@ -60,7 +60,12 @@ GitHub disables scheduled workflows in a repository with no activity for 60 days
 
 **Image report.** It fails, naming the item, unless the image has `GRIST_EXT_FULL_EDITION_BASE_URL=` (empty) and `GRIST_ALLOW_AUTOMATIC_VERSION_CHECKING=false` in its environment (`ok: image env`), and has no `/grist/ext/app`, `/grist/ext/assets` or `/grist/_build/ext`, and a build channel of `core` in `/grist/_build/app/common/version.js` (`ok: image contents`); when the contents test fails, the last `image contents:` line printed above the failure names the item. A failure means full-edition code, or a switch to it, could be in the image: the build arguments or the dummy `ext/` changed, or upstream's `Dockerfile` or version file changed. Never remove the check; if only the compiled form of the channel changed, adjust the pattern in `run_lockout.sh` to whatever still shows the literal `core`.
 
-It then starts the mock OIDC server and the image with the boot key in the environment only, and `pf/e2e/lockout_check.py` prints `ok: <name>` for each of six checks, stopping at the first `FAIL: <name>: <message>`:
+It then starts the mock OIDC server and runs Grist twice, with the boot key in the environment only. The runner prints a `== pass …` line before each pass and each restart, so a failure shows which pass it belongs to.
+
+- **Pass 1** starts the image with its default settings and no volume.
+- **Pass 2** uses the settings of the `privacyfence-suite` stack: `GRIST_PERSONAL_ORGS=false` and `GRIST_ORG_CREATION_ANYONE=false`, with a fresh named volume (`pf-lockout-persist`) at `/persist`. It runs the checks once on the fresh volume, then restarts the container and runs them again on the same volume. A failure here that pass 1 does not have points at a first-start problem with those settings; see `pf/PATCHES.md`.
+
+In each run, `pf/e2e/lockout_check.py` prints `ok: <name>` for each check, stopping at the first `FAIL: <name>: <message>`. Pass 1 has six checks. Pass 2 (`--suite-settings`) also has the last two checks in the table, run right after `oidc_sign_in`:
 
 | Check | What it proves | A failure means |
 | --- | --- | --- |
@@ -70,8 +75,10 @@ It then starts the mock OIDC server and the image with the boot key in the envir
 | `oidc_sign_in` | A browser-like client signs in through the mock OIDC server and `GET /api/profile/user` returns the expected email. | OIDC sign-in was gated or removed, or the mock server behaves differently (read the mock's log). |
 | `api_key` | A signed-in user can `POST /api/profile/apikey` and gets a 40-hex key. | API keys are gated. |
 | `api_key_use` | That key can create a workspace and a document, and list its tables. | API-key authentication or document creation is gated. |
+| `no_personal_org` | Pass 2 only. The signed-in user's `GET /api/orgs` lists only the `team` site, and no personal org. | `GRIST_PERSONAL_ORGS=false` no longer hides personal orgs, or the user is not in the team site. |
+| `no_org_creation` | Pass 2 only. The signed-in user's `POST /api/orgs` answers 403. | `GRIST_ORG_CREATION_ANYONE=false` no longer stops users from creating sites. |
 
-After the checks, the script fails if Grist's log mentions the full edition (`ok: logs`). Nothing it prints contains the boot key, an API key or a cookie; keep it so, and never add `set -x` to the script. A failing run prints both containers' logs.
+After each run of the checks, the script fails if Grist's log mentions the full edition (`ok: logs`). Nothing it prints contains the boot key, an API key or a cookie; keep it so, and never add `set -x` to the script. A failing run prints both containers' logs.
 
 ## Pins
 
@@ -87,7 +94,7 @@ Each release copies the pinned gvisor image to `ghcr.io/privacyfence/gvisor-unpr
 
 ## Testing patches
 
-Our patches are not run through upstream's test suite, which runs only on `main`; the fork runs only the lock-out check. This gap is accepted. Smoke-test a patched release by hand in the suite before relying on it.
+Our patches are not run through upstream's test suite, which runs only on `main`; the fork runs only the lock-out check, whose pass 2 covers the patch in `PATCHES.md`. This gap is accepted. Smoke-test a patched release by hand in the suite before relying on it.
 
 ## Licence
 

@@ -527,7 +527,14 @@ export class UsersManager {
         login.user = user;
         await manager.save([user, login]);
       }
-      if (getPersonalOrgsEnabled() && !user.personalOrg && !NON_LOGIN_EMAILS.includes(login.email)) {
+      // The support user always gets its personal org, even with personal orgs disabled:
+      // HomeDBManager.initializeSpecialIds() needs a workspace owned by it (the example
+      // workspace), and fails at startup with "No example workspace available" on a fresh
+      // database otherwise. With personal orgs disabled, that org stays hidden from users.
+      // (PrivacyFence patch, see pf/PATCHES.md.)
+      const isSupportUser = login.email === normalizeEmail(SUPPORT_EMAIL);
+      if ((getPersonalOrgsEnabled() || isSupportUser) && !user.personalOrg &&
+        !NON_LOGIN_EMAILS.includes(login.email)) {
         // Add a personal organization for this user.
         // We don't add a personal org for anonymous/everyone/previewer "users" as it could
         // get a bit confusing.
@@ -544,7 +551,7 @@ export class UsersManager {
         // We just created a personal org; set userOrgPrefs that should apply for new users only.
         const userOrgPrefs: UserOrgPrefs = { showGristTour: true };
         const org = result.data;
-        if (org) {
+        if (org && getPersonalOrgsEnabled()) {
           await this._homeDb.updateOrg({ userId: user.id }, org.id, { userOrgPrefs }, manager);
         }
       }
